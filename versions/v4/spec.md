@@ -2,7 +2,7 @@
 
 **Status:** stable. This version only receives minor fixes.
 
-**Latest draft:** [spec v5-draft0](https://verana-labs.github.io/verifiable-trust-spec/)
+**Latest draft:** [spec v5-draft1](https://verana-labs.github.io/verifiable-trust-spec/)
 
 **Previous versions:** [spec v3](https://verana-labs.github.io/verifiable-trust-spec/versions/v3/)
 
@@ -746,9 +746,9 @@ Instead, the issuance time of a Verifiable Trust Credential is **objectively det
 
 The `digestJCS` of a W3C Verifiable Trust Credential MUST be computed as follows:
 
-1. **Select the members to hash.** Start from the credential and remove the `proof` member, if present. Every other member MUST be retained, **including `id`**.
+1. **Take the credential as issued, in its entirety.** No member is removed: `id` and `proof` are both included. Where the credential carries a proof set, the complete set as issued is included.
 
-2. **Canonicalize** the resulting object using the [JSON Canonicalization Scheme (JCS)](https://www.rfc-editor.org/rfc/rfc8785) as defined in RFC 8785. Implementations MUST use an RFC 8785 conformant canonicalization; a serializer that merely sorts object keys is not equivalent and MUST NOT be substituted.
+2. **Canonicalize** the credential using the [JSON Canonicalization Scheme (JCS)](https://www.rfc-editor.org/rfc/rfc8785) as defined in RFC 8785. Implementations MUST use an RFC 8785 conformant canonicalization; a serializer that merely sorts object keys is not equivalent and MUST NOT be substituted.
 
 3. **Hash** the UTF-8 encoding of the canonical form, using the algorithm named by the `digest_algorithm` attribute of the `CredentialSchema` entry the credential refers to, resolved as defined in [Resolving the digest algorithm](#resolving-the-digest-algorithm). `digest_algorithm` MUST be one of the lowercase tokens `sha384` or `sha512`.
 
@@ -770,7 +770,7 @@ A credential whose schema is not registered in a VPR has no `CredentialSchema` e
 
 ##### Anchoring the digest
 
-When issuing a Verifiable Trust Credential, the issuer MUST compute its `digestJCS` as defined above, and **register** it in the VPR by calling [CreateOrUpdateParticipantSession](https://verana-labs.github.io/verifiable-trust-vpr-spec/#mod-pp-msg-10-create-or-update-participant-session) with the `digest` parameter. The VPR stores the digest with the block timestamp via [Store Digest](https://verana-labs.github.io/verifiable-trust-vpr-spec/#mod-di-msg-1-store-digest).
+When issuing a Verifiable Trust Credential, the issuer MUST compute its `digestJCS` as defined above, and **register** it in the VPR by calling [CreateOrUpdateParticipantSession](https://verana-labs.github.io/verifiable-trust-vpr-spec/#mod-pp-msg-10-create-or-update-participant-session) with the `digest` parameter. The VPR stores the digest with the block timestamp via [Store Digest](https://verana-labs.github.io/verifiable-trust-vpr-spec/#mod-di-msg-1-store-digest). Registration MUST succeed before the credential is delivered to the holder.
 
 ##### Verifying the issuance time
 
@@ -788,11 +788,13 @@ This mechanism binds a credential's content to a block timestamp assigned by the
 
 - An issuer **cannot backdate** a credential. The `created` timestamp is assigned at block execution and is not under the issuer's control.
 
-- An issuer **can pre-date** one. Because the anchored value covers content only, an issuer MAY compute and anchor the digest of a credential while authorized, then sign and deliver it later, after that authorization has expired. Such a credential presents an effective issuance time at which its issuer was genuinely authorized, and is indistinguishable from one delivered immediately. Revocation and slashing of the issuer's `Participant` entry remain effective against it; expiry alone does not.
+- An issuer **cannot pre-date** one. The digest covers the credential's `proof`, so it cannot be computed before the credential is signed. Anchoring can only place `created` at or after actual issuance.
 
-- A `Digest` entry records `digest` and `created` only. It does not record which account anchored it, and the VPR does not verify a digest against any content. An entry therefore establishes that its content existed at `created` — not who produced it. Attribution of a credential to its issuer comes from the credential's own proof, verified separately per [TR-2].
+- **No other party can anchor the digest first.** Any account MAY anchor any digest, and because [Store Digest](https://verana-labs.github.io/verifiable-trust-vpr-spec/#mod-di-msg-1-store-digest) is idempotent the first anchor fixes `created` permanently. Computing the digest requires the signed credential, which exists nowhere outside the issuer until delivery, and registration MUST precede delivery. An issuer that delivers a credential before registering its digest forfeits this property.
 
-- Anchoring is **not authenticated against the credential**. Any account MAY anchor any digest, and because [Store Digest](https://verana-labs.github.io/verifiable-trust-vpr-spec/#mod-di-msg-1-store-digest) is idempotent, the first anchor fixes `created` permanently. A party able to observe or predict a credential's content before its issuer anchors it can therefore fix that credential's effective issuance time earlier than its true issuance — including into a window in which the issuer was not authorized, which makes the credential fail [TR-5] irrecoverably, as the entry cannot be amended. Issuers SHOULD anchor a credential's digest in the same transaction that establishes its issuance.
+- A `Digest` entry records `digest` and `created` only. It does not record which account anchored it, and the VPR does not verify a digest against any content. Attribution of a credential to its issuer comes from the credential's own proof, verified separately per [TR-2].
+
+- Re-signing a credential changes its digest. A credential re-signed after issuance (key rotation, proof-suite migration) MUST have its new digest registered, and its effective issuance time becomes that of the new registration. Issuers requiring a stable issuance time MUST NOT re-sign in place.
 
 #### [VT-CRED-W3C-LINKED-VP] W3C VTC Linked VP
 
