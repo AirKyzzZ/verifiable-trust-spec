@@ -792,6 +792,8 @@ This mechanism binds a credential's content to a block timestamp assigned by the
 
 - A `Digest` entry records `digest` and `created` only. It does not record which account anchored it, and the VPR does not verify a digest against any content. An entry therefore establishes that its content existed at `created` — not who produced it. Attribution of a credential to its issuer comes from the credential's own proof, verified separately per [TR-2].
 
+- Anchoring is **not authenticated against the credential**. Any account MAY anchor any digest, and because [Store Digest](https://verana-labs.github.io/verifiable-trust-vpr-spec/#mod-di-msg-1-store-digest) is idempotent, the first anchor fixes `created` permanently. A party able to observe or predict a credential's content before its issuer anchors it can therefore fix that credential's effective issuance time earlier than its true issuance — including into a window in which the issuer was not authorized, which makes the credential fail [TR-5] irrecoverably, as the entry cannot be amended. Issuers SHOULD anchor a credential's digest in the same transaction that establishes its issuance.
+
 #### [VT-CRED-W3C-LINKED-VP] W3C VTC Linked VP
 
 A DID Document MAY present an unlimited number of Verifiable Trust Credential as Linked-VPs. Linked-VPs MUST be signed by the DID controller of the DID Document, and MUST be declared with a fragment that starts with `#vpr-schemas-` and ends with `-vtc-vp`. Example:
