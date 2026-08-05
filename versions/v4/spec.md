@@ -742,25 +742,55 @@ Verifiable Trust Credentials do not rely on an issuer-asserted `issuanceDate` fi
 
 Instead, the issuance time of a Verifiable Trust Credential is **objectively determined** using the credential’s cryptographic digest anchored in the VPR.
 
-When issuing a Verifiable Trust Credential, the issuer MUST:
+##### Computing `digestJCS`
 
-1. **Canonicalize** the credential using the [JSON Canonicalization Scheme (JCS)](https://www.rfc-editor.org/rfc/rfc8785) as defined in RFC 8785
+The `digestJCS` of a W3C Verifiable Trust Credential MUST be computed as follows:
 
-2. **Compute** a deterministic **JCS Digest** (`digestJCS`) of the canonicalized credential using the `digest_algorithm` specified in the [CredentialSchema](https://verana-labs.github.io/verifiable-trust-vpr-spec/#credentialschema) (`SHA384` or `SHA512`)
+1. **Select the members to hash.** Start from the credential and remove the `proof` member, if present. Every other member MUST be retained, **including `id`**.
 
-3. **Register** this `digestJCS` in the VPR by calling [CreateOrUpdateParticipantSession](https://verana-labs.github.io/verifiable-trust-vpr-spec/#mod-pp-msg-10-create-or-update-participant-session) with the `digest` parameter. The VPR stores the digest with the block timestamp via [Store Digest](https://verana-labs.github.io/verifiable-trust-vpr-spec/#mod-di-msg-1-store-digest).
+2. **Canonicalize** the resulting object using the [JSON Canonicalization Scheme (JCS)](https://www.rfc-editor.org/rfc/rfc8785) as defined in RFC 8785. Implementations MUST use an RFC 8785 conformant canonicalization; a serializer that merely sorts object keys is not equivalent and MUST NOT be substituted.
+
+3. **Hash** the UTF-8 encoding of the canonical form, using the algorithm named by the `digest_algorithm` attribute of the `CredentialSchema` entry the credential refers to, resolved as defined in [Resolving the digest algorithm](#resolving-the-digest-algorithm). `digest_algorithm` MUST be one of the lowercase tokens `sha384` or `sha512`.
+
+4. **Encode** the result as a Subresource Integrity string: the `digest_algorithm` token, a hyphen, then the raw digest encoded in standard base64 **with** padding, as defined in [RFC 4648 section 4](https://www.rfc-editor.org/rfc/rfc4648#section-4). The base64url alphabet of RFC 4648 section 5 MUST NOT be used. Example: `sha384-MzNNbQTWCSUSi0bbz7dbua+RcENv7C6FvlmYJ1Y+I727HsPOHdzwELMYO9Mz68M26`.
+
+The resulting string is the credential's `digestJCS`: the value anchored in the VPR at issuance, and the value recomputed and looked up during verification.
+
+##### Resolving the digest algorithm
+
+`digest_algorithm` is an attribute of the `CredentialSchema` entry that governs the credential. To obtain it, an issuer or verifier MUST:
+
+1. read the credential's `credentialSchema.id`, which is the URL of the VTJSC;
+2. resolve the VTJSC and read its `credentialSubject.jsonSchema.$ref`, which is the VPR reference of the `CredentialSchema` entry;
+3. resolve that reference and read the `digest_algorithm` attribute of the referenced [CredentialSchema](https://verana-labs.github.io/verifiable-trust-vpr-spec/#credentialschema) entry.
+
+`digest_algorithm` is fixed when the `CredentialSchema` entry is created and MUST NOT change afterwards.
+
+A credential whose schema is not registered in a VPR has no `CredentialSchema` entry, and therefore no `digest_algorithm`. Such a credential is not a Verifiable Trust Credential (see [VT-CRED]) and this section does not apply to it.
+
+##### Anchoring the digest
+
+When issuing a Verifiable Trust Credential, the issuer MUST compute its `digestJCS` as defined above, and **register** it in the VPR by calling [CreateOrUpdateParticipantSession](https://verana-labs.github.io/verifiable-trust-vpr-spec/#mod-pp-msg-10-create-or-update-participant-session) with the `digest` parameter. The VPR stores the digest with the block timestamp via [Store Digest](https://verana-labs.github.io/verifiable-trust-vpr-spec/#mod-di-msg-1-store-digest).
+
+##### Verifying the issuance time
 
 During verification, a trust resolution process MUST:
 
-1. **Canonicalize** the received credential using [JCS (RFC 8785)](https://www.rfc-editor.org/rfc/rfc8785)
-2. **Recompute** the `digestJCS` from the canonicalized credential using the `digest_algorithm` from the [CredentialSchema](https://verana-labs.github.io/verifiable-trust-vpr-spec/#credentialschema)
-3. **Query** the VPR using [Get Digest](https://verana-labs.github.io/verifiable-trust-vpr-spec/#mod-di-qry-1-get-digest) to locate the corresponding digest entry
-4. **Use** the `created` timestamp from the returned `Digest` entry as the **effective issuance time** of the credential
+1. **Recompute** the `digestJCS` of the received credential, exactly as defined in [Computing `digestJCS`](#computing-digestjcs);
+2. **Query** the VPR using [Get Digest](https://verana-labs.github.io/verifiable-trust-vpr-spec/#mod-di-qry-1-get-digest) to locate the corresponding `Digest` entry;
+3. **Use** the `created` timestamp of the returned entry as the **effective issuance time** of the credential.
 
-This mechanism provides a verifiable, tamper-resistant issuance-time signal that:
+A credential whose recomputed `digestJCS` has no corresponding `Digest` entry in the VPR has no provable issuance time. Verification of that credential MUST fail.
 
-- Cannot be forged or backdated by the issuer
-- Allows verification that the issuer was authorized to issue the credential **at the time of issuance**
+##### Issuance time security considerations
+
+This mechanism binds a credential's content to a block timestamp assigned by the VPR, and so allows verification that the issuer was authorized to issue the credential **at that time** rather than merely at the time of presentation. Its guarantees, and their limits, are:
+
+- An issuer **cannot backdate** a credential. The `created` timestamp is assigned at block execution and is not under the issuer's control.
+
+- An issuer **can pre-date** one. Because the anchored value covers content only, an issuer MAY compute and anchor the digest of a credential while authorized, then sign and deliver it later, after that authorization has expired. Such a credential presents an effective issuance time at which its issuer was genuinely authorized, and is indistinguishable from one delivered immediately. Revocation and slashing of the issuer's `Participant` entry remain effective against it; expiry alone does not.
+
+- A `Digest` entry records `digest` and `created` only. It does not record which account anchored it, and the VPR does not verify a digest against any content. An entry therefore establishes that its content existed at `created` — not who produced it. Attribution of a credential to its issuer comes from the credential's own proof, verified separately per [TR-2].
 
 #### [VT-CRED-W3C-LINKED-VP] W3C VTC Linked VP
 
