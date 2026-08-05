@@ -752,7 +752,7 @@ The `digestJCS` of a W3C Verifiable Trust Credential MUST be computed as follows
 
 3. **Hash** the UTF-8 encoding of the canonical form, using the algorithm named by the `digest_algorithm` attribute of the `CredentialSchema` entry the credential refers to, resolved as defined in [Resolving the digest algorithm](#resolving-the-digest-algorithm). `digest_algorithm` MUST be one of the lowercase tokens `sha384` or `sha512`.
 
-4. **Encode** the result as a Subresource Integrity string: the `digest_algorithm` token, a hyphen, then the raw digest encoded in standard base64 **with** padding, as defined in [RFC 4648 section 4](https://www.rfc-editor.org/rfc/rfc4648#section-4). The base64url alphabet of RFC 4648 section 5 MUST NOT be used. Example: `sha384-MzNNbQTWCSUSi0bbz7dbua+RcENv7C6FvlmYJ1Y+I727HsPOHdzwELMYO9Mz68M26`.
+4. **Encode** the raw digest in standard base64 **with** padding, as defined in [RFC 4648 section 4](https://www.rfc-editor.org/rfc/rfc4648#section-4). The base64url alphabet of RFC 4648 section 5 MUST NOT be used. No algorithm prefix is added: the `digestJCS` is the encoded digest alone. A party interpreting a `digestJCS` determines the algorithm from the `digest_algorithm` of the governing `CredentialSchema`, resolved as above, and never from the value itself. Example: `GOp0dicJ4ufacOQxQfQojCyGoC7RJClOzqb23pJubmG2z3cqD/73j1+3kYNSrxUP`.
 
 The resulting string is the credential's `digestJCS`: the value anchored in the VPR at issuance, and the value recomputed and looked up during verification.
 
