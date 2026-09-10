@@ -14,6 +14,7 @@
 
 ~ [Ariel Gentile](https://www.linkedin.com/in/aogentile/), ([The Verana Foundation](https://veranafoundation.org))
 ~ [Andres Vallecilla](https://www.linkedin.com/in/andres-felipe-vallecilla-puentes/), ([Mobiera](https://mobiera.com))
+~ [Maxime Mansiet](https://www.linkedin.com/in/maxime-mansiet/), ([The Verana Foundation](https://veranafoundation.org))
 
 **Participate:**
 
