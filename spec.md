@@ -612,7 +612,7 @@ authorized issuers MAY issue Verifiable Credentials that conform to those schema
 
 Verifiable Credentials that comply with the Verifiable Trust Specification are referred to as **Verifiable Trust Credentials (VTCs)**.
 
-A Verifiable Trust Credential MUST be linked to the applicable **VTJSC** issued by the Ecosystem DID. For W3C VTCs ([VT-CRED-W3C]), this link is established directly via the `credentialSchema` property. For AnonCreds VTCs ([VT-CRED-ANON]), the link is indirect: the AnonCreds Credential Definition references the VTJSC via `relatedJsonSchemaCredentialId`. In both cases, this establishes a verifiable and discoverable trust chain between:
+A Verifiable Trust Credential MUST be linked to the applicable **VTJSC** issued by the Ecosystem DID. For W3C VTCs ([VT-CRED-W3C]), this link is established directly via the `credentialSchema` property. For AnonCreds VTCs ([VT-CRED-ANON]), the link is indirect: the AnonCreds Credential Definition references the VTJSC via `relatedJsonSchemaCredentialId`. For SD-JWT VTCs ([VT-CRED-SDJWT]), the link is indirect as well: the credential's `vct` Type Metadata references the VTJSC via the same `relatedJsonSchemaCredentialId` property. In all cases, this establishes a verifiable and discoverable trust chain between:
 
 - the issued credential,
 - the governing schema definition,
@@ -664,6 +664,13 @@ The Verifiable Trust Specification is **container-agnostic** and supports multip
   - auditability and interoperability are primary concerns
   - issuance time must be objectively verifiable
   - unlinkability is not required
+
+- **IETF SD-JWT VC (`dc+sd-jwt`)**  
+  Suitable for credentials exchanged over OpenID4VCI / OpenID4VP where:
+  - selective disclosure is required (per-claim disclosures)
+  - holder binding is required (`cnf`)
+  - interoperability with OpenID4VC wallet stacks is a primary concern
+  - full unlinkability is not required (salted disclosures limit, but do not eliminate, correlation)
 
 - **Anonymous Credentials (e.g., AnonCreds)**  
   Suitable for private credentials where:
@@ -937,6 +944,52 @@ AnonCreds VTCs provide the following privacy properties relevant to the Verifiab
 - **Predicate proofs**: Integer attributes (e.g., dates, ages) can be proven via boolean expressions without revealing the actual values.
 - **Non-revocation proofs**: Revocation status is proven without disclosing a correlatable credential index.
 - **Multi-credential binding**: A holder can prove that multiple credentials were issued to the same entity (same link secret) without revealing the link secret itself.
+
+### [VT-CRED-SDJWT] SD-JWT Verifiable Trust Credential (VTC)
+
+An SD-JWT Verifiable Trust Credential is a Verifiable Trust Credential issued as an [IETF SD-JWT VC](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-sd-jwt-vc-19) (`dc+sd-jwt`). SD-JWT VTCs provide **selective disclosure** through salted-hash disclosures and **holder binding** through the `cnf` claim, and are the natural container for OpenID4VCI issuance and OpenID4VP presentation flows.
+
+SD-JWT VC Type Metadata defines no property for the **governance** of a type. The schema properties `schema` and `schema_uri` existed in earlier revisions and were removed in [draft-12](https://www.ietf.org/archive/id/draft-ietf-oauth-sd-jwt-vc-12.txt); the same revision introduced the extensibility rule that a Type Metadata document "MAY contain additional top level or subordinate properties" and that "Consumers MUST ignore properties that are not understood". Verifiable Trust uses that extension point to carry the link to the Ecosystem that governs the type.
+
+- [VT-CRED-SDJWT-1] The `vct` of an SD-JWT VTC identifies the **type**, not the issuer. Every issuer that an [[ref: ecosystem]] accredits for a given `CredentialSchema` MUST use the same `vct` value, and that value MUST NOT change while the schema exists. The Type Metadata document it identifies is published by the Ecosystem that issued the VTJSC, not by each credential issuer, so a relying party can request a type without naming the issuers that may satisfy it.
+
+- [VT-CRED-SDJWT-2] The `vct` of an SD-JWT VTC MUST be an `https` URL that resolves to that Type Metadata document. [SD-JWT VC](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-sd-jwt-vc-19) permits any Collision-Resistant Name and leaves retrieval to the consumer's discretion; Verifiable Trust narrows this, so that a relying party reaches the governing Ecosystem from the credential alone, with no out-of-band configuration. A consequence of this narrowing is that the Ecosystem serving the document observes requests for it; relying parties SHOULD cache Type Metadata, as [SD-JWT VC](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-sd-jwt-vc-19) recommends, and MUST NOT treat a cached document as less authoritative than a freshly retrieved one.
+
+- [VT-CRED-SDJWT-3] The Type Metadata document MUST carry the property `relatedJsonSchemaCredentialId`, whose value identifies the **VTJSC** issued by the Ecosystem DID for the corresponding `CredentialSchema` — the same linkage property the AnonCreds Credential Definition uses ([VT-CRED-ANON]). The document MUST NOT carry `schema` or `schema_uri`. The JSON Schema MUST be obtained **through** the VTJSC, from its `credentialSubject.jsonSchema.$ref`, and verified against the VTJSC's `digestSRI`. Resolution of that `$ref` is performed through the relying party's own VPR access per [WL-VPR], so no single hosting endpoint is a point of failure and the schema's authenticity derives from the Ecosystem DID's signature rather than from transport.
+
+- [VT-CRED-SDJWT-4] An SD-JWT VTC MUST carry `vct#integrity`, the integrity metadata of the Type Metadata document it names, as defined by [SD-JWT VC](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-sd-jwt-vc-19). A relying party MUST verify it before using the document, and MUST fail verification when it does not match. Without this binding the link from the credential to its VTJSC rests on an unsigned document at a mutable URL; `vct#integrity` gives the SD-JWT container the same property that `credentialSchema` gives a W3C VTC ([VT-CRED-W3C]) and that the Credential Definition gives an AnonCreds VTC ([VT-CRED-ANON]).
+
+- [VT-CRED-SDJWT-5] During trust resolution, the VTJSC referenced under [VT-CRED-SDJWT-3] MUST be verified per [TR-3], and the issuer MUST be verified as **currently authorized** by the Ecosystem for that VTJSC. SD-JWT VTCs do not anchor a `digestJCS` in the VPR: [TR-4] does not apply. Issuer authorization at credential reception time is enforced by the holder's wallet as specified in [CIT].
+
+- [VT-CRED-SDJWT-6] The relying party MUST determine the issuer [[ref: DID]] of an SD-JWT VTC as follows: when `iss` is a DID, that DID; otherwise, the DID carried as a URI SAN of the end-entity certificate of the `x5c` header. When neither yields a DID, verification MUST fail. The signing key MUST appear under `assertionMethod` in that DID's [[ref: DID Document]], and that DID MUST itself verify per [TR]. An X.509 certificate carrying the DID as a URI SAN conveys the key; the authority for that key is the DID Document.
+
+- [VT-CRED-SDJWT-7] An SD-JWT VTC MAY carry a `status` claim. When it does, the claim MUST be a [Token Status List](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-status-list-21) reference, nested as `status.status_list` with `uri` and `idx`, and a relying party MUST evaluate it as that specification defines, after the issuer DID has been verified under [VT-CRED-SDJWT-6]. The Status List Token MUST be signed by a key that the issuer DID authorizes under `assertionMethod`. A status that is not `VALID`, and any failure to retrieve or verify the Status List Token, MUST fail verification.
+
+#### SD-JWT VTCs: Issuance Time
+
+Unlike W3C VTCs, SD-JWT VTCs do **not** anchor a digest in the VPR to establish issuance time, for three reasons.
+
+`digestJCS` is defined over a JSON document canonicalized per [RFC 8785](https://www.rfc-editor.org/rfc/rfc8785). The issuer-signed part of an SD-JWT VC is a JWS, not a JSON document, so [TR-4] cannot be applied to it without defining a second digest primitive.
+
+Issuer authorization for this container is evaluated at verification time rather than at issuance time, so a forged or backdated `iat` cannot manufacture authorization that the Ecosystem has not granted. `iat` remains an issuer-asserted value and a relying party MUST NOT treat it as a proven issuance time.
+
+Finally, the VPR digest registry timestamps public documents. An SD-JWT VTC is held and presented by its holder, and its issuer-signed part is unique per credential, so anchoring one digest per issued credential would publish an observable record of issuance volume and timing for credentials that are not otherwise public.
+
+Issuer authorization checks at credential reception time are covered by [CIT].
+
+#### Example Type Metadata of an SD-JWT VTC
+
+```json
+{
+  "vct": "https://ecosystem.example/vt/vct/42",
+  "name": "ExampleCredential",
+  "relatedJsonSchemaCredentialId": "https://ecosystem.example/vt/schemas-example-jsc.json",
+  "display": [{ "locale": "en", "name": "ExampleCredential" }],
+  "claims": [{ "path": ["firstName"] }, { "path": ["lastName"] }]
+}
+```
+
+A relying party holding any SD-JWT VTC, credential offer, or presentation request can therefore walk `vct` → Type Metadata → VTJSC → Ecosystem, with every step verifiable, and query the VPR for the peer's authorization — without pre-configured knowledge of the credential type.
 
 ### [ECS] Essential Credential Schemas
 
